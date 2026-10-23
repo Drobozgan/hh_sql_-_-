@@ -166,7 +166,23 @@ ORDER BY responses_cnt DESC;
 --count(DISTINCT v.vacancy_id) необходим, так как при JOIN с таблицей откликов строки вакансий размножаются (много откликов на вакансию)
 --просто count(*) посчитал бы количество строк в объединении, а не кол-во вакансий
 
+--дополнение для ГринЭнерго--
+SELECT 
+    v.vacancy_name, 
+    v.published_at, 
+    v.closed_at, 
+    v.salary_from, 
+    v.salary_to, 
+    v.experience,
+    v.employment
+FROM vacancies v
+JOIN employers e ON v.employer_id = e.employer_id
+WHERE e.employer_name = 'ГринЭнерго';
+
 --в INNER JOIN исчезла компания «ГринЭнерго» (у неё нет откликов),для HR это потеря так как цель отчета — найти неактивных партнеров, 
+--дополнение по ГринЭнерго: вакансия была опубликована 06.04.2026 и уже закрыта 04.05.2026, при этом в ней не был указан уровень дохода (NULL) 
+--отсутствие откликов связано с отсутствием вилки зарплаты и ограниченным сроком публикации 
+--предпринимать ничего не нужно, так как вакансия уже в архиве, а на будущее работодателю порекомендуем указывать зарплату для привлечения кандидатов
 --а INNER JOIN прячет проблему, удаляя такие компании
 
 --Правило выбора: LEFT JOIN: обязателен полный список из главной (левой) таблицы, даже без пары. INNER JOIN: нужны только пересечения 
@@ -180,9 +196,11 @@ SELECT
 FROM responses
 GROUP BY 1
 ORDER BY 1;
+
+SELECT max(created_at) AS last_response_date FROM responses;
 --конверсия максимальна в июне
 --как будто бы вполне, много откликов и приглашений много, нельзя сказать о недостатке данных, но в любмо случае это может быть какой-то выброс
---последний месяц - август, там очень мало приглашений и следовательно очень низкая конверсия, похоже на какой-то выброс
+--последний месяц - август, он представлен лишь наполовину (до 15 числа), поэтому общая статистика месяца искажена
 
 --Д2--
 SELECT 
@@ -217,14 +235,22 @@ GROUP BY 1;
 
 --правильный запрос:
 
+WITH response_stats AS (
+    SELECT 
+        vacancy_id,
+        count(response_id) AS responses_cnt
+    FROM responses
+    GROUP BY vacancy_id
+)
 SELECT 
     v.professional_role,
-    count(DISTINCT v.vacancy_id) AS vacancies,
-    sum(v.salary_from) AS total_salary,
-    round(1.0 * count(r.response_id) / nullif(count(DISTINCT v.vacancy_id), 0), 2) AS responses_per_vacancy
+    count(DISTINCT v.vacancy_id) AS vacancies_cnt,
+    round(avg(v.salary_from)) AS avg_salary_from,
+    round(1.0 * coalesce(sum(r.responses_cnt), 0) / count(DISTINCT v.vacancy_id), 2) AS responses_per_vacancy
 FROM vacancies v
-LEFT JOIN responses r ON v.vacancy_id = r.vacancy_id
+LEFT JOIN response_stats r ON v.vacancy_id = r.vacancy_id
 WHERE v.closed_at IS NULL
 GROUP BY v.professional_role;
 
-
+--Сумма зп в данном контексте непоказательна, она зависит от количества открытых вакансий и не отражает реальный доход специста 
+--более релевантная метрика -средняя зарплата, которая показывает уровень дохода по направлению
